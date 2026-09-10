@@ -1,0 +1,55 @@
+# Build outputs
+[Dd]ebug/
+[Rr]elease/
+*.elf
+*.hex
+*.eep
+*.map
+*.lss
+*.srec
+*.bin
+*.a
+*.o
+*.d
+*.obj
+*.pnproj
+*.pndep
+
+# Atmel/Microchip Studio generated files
+*.cache
+*.componentcache
+*.componentinfo.xml
+*.ExampleProjects.xml
+*.stackdump
+
+# Object/dependency caches
+Objects/
+Dependencies/
+gcc-plugin.data
+
+# Device pack / framework cache (auto-restored, don't commit)
+*.atzip
+FrameworkPacks/
+
+# User-specific settings (per-machine, shouldn't be shared)
+*.cproj.user
+*.atsln.user
+*.suo
+*.user
+
+# Visual Studio / Atmel Studio temp & IDE files
+.vs/
+*.vspscc
+*.vssscc
+*.psess
+*.vsp
+*.vspx
+
+# Windows / OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Backup files
+*.bak
+*~
