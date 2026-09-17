@@ -21,7 +21,7 @@ pushloop:
 	push r0 ; push them to stack
 	dec r16 ; MSB is first in
 	brne pushloop ; continue till 8 bytes are done
-	rcall add32bit ; call the add function and return here when we are done
+	rcall sub32bit ; call the add function and return here when we are done
 
 fin:
 	rjmp fin

@@ -29,22 +29,22 @@ mul32bit:
 	clr r20
 
 mulclr:
-	st x+, r20
+	st x+, r20 ; set all of result sram to 00
 	dec r16
 	brne mulclr
 
 
-	; byte 3 * byte 3
+	; byte 3 * byte 3, MSB first
 	lds r20, value1+3
 	lds r21, value2+3
 	mul r20, r21			; r1:r0 is the product (it is 16 bits)
 
-	lds r22, product+7
-	add r22, r0
+	lds r22, product+7 ; LSB
+	add r22, r0		   ; r0 has LSB of product. no carry yet
 	sts product+7, r22
 
-	lds r22, product+6
-	adc r22, r1
+	lds r22, product+6 ; second LSB
+	adc r22, r1        ; r1 has MSB of product. no carry yet
 	sts product+6, r22
 
 
@@ -343,8 +343,8 @@ copybytes:
 	ret
 
 pmv1:
-	.db 0x00, 0x00, 0x00, 0x05
-	.db 0x00, 0x00, 0x00, 0x03
+	.db 0x00, 0x00, 0x0F, 0xFF
+	.db 0x00, 0x00, 0x01, 0x11
 
 
 	.dseg
