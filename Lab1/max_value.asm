@@ -7,9 +7,9 @@ main:
     ldi XL, low(data)
 
 loop:
-    ld r16, X+          ; Fetch next byte, bump index
+    ld r16, X+           ; Fetch next byte, bump index
     cpi r16, 0           ; Compare r16 to zero
-    breq done            ; If r16 was zero, this was the terminator - stop
+    breq done            ; If r16 was zero -> stop
     cp r16, r17          ; Compare current byte to running max
     brlo skip            ; If smaller, skip updating
     mov r17, r16         ; Otherwise, this is the new max
@@ -18,10 +18,10 @@ skip:
 
 
 done:
-    sts max, r17; Store result
+    sts max, r17         ; Store result
 
 fin:
-    rjmp fin            ; Spin forever
+    rjmp fin
 
 ; Data starts here (On this processor this is always 0x100)
 	.dseg
