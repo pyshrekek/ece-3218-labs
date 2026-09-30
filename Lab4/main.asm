@@ -1,16 +1,11 @@
-/*
-Loads the series 0x00, 0x01, 0x02 ... 0xFE, 0xFF, 0x00, 0x01 into the DAC. Sketch the
-output waveform in your notebook. Estimate the period of this waveform. Other
-commonly used waveforms are the triangle, square and sine wave. Modify the program
-above so it is useful for generating a triangle wave. It should also be very easy to
-generate a square wave at the same frequency; do so.
-*/
-
 .macro DACOUT                   ; DACOUT reg : write reg to DAC channel A
     out  PORTD, @0
     cbi  PORTC, 0
     sbi  PORTC, 0
 .endmacro
+
+.equ TOP_LENGTH = 3
+.equ BOT_LENGTH = 3
 
 .cseg
 .org 0x0000
@@ -65,3 +60,42 @@ sq_down:
     nop
     brne sq_down
     rjmp sq_up
+
+trapezoid:
+    ldi r21, TOP_LENGTH
+    ldi r22, BOT_LENGTH
+    clr r17
+    ; all sections should sum to 9 clock cycles
+
+trap_bot_init:
+    mov r20, r22 ; load bottom length
+
+trap_bot:
+    DACOUT r17
+    nop
+    dec r20
+    brne trap_bot
+
+trap_up:
+    inc r17
+    DACOUT r17
+    cpi r17, 0xFE
+    brne trap_up
+
+    inc r17
+    mov r20, r21
+
+trap_top:
+    DACOUT r17
+    nop
+    dec r20
+    brne trap_top
+
+trap_down:
+    dec r17
+    DACOUT r17
+    cpi r17, 0x01
+    brne trap_down
+    
+    dec r17
+    rjmp trap_bot_init
