@@ -4,8 +4,8 @@
     sbi  PORTC, 0
 .endmacro
 
-.equ TOP_LENGTH = 3
-.equ BOT_LENGTH = 3
+.equ TOP_LENGTH = 200
+.equ BOT_LENGTH = 200
 
 .cseg
 .org 0x0000
@@ -26,7 +26,7 @@ reset:
     ldi  r16, 0xFF
     out  DDRD, r16          ; PD7..PD0 = data bus outputs
 	clr  r17
-	rjmp saw
+	rjmp trapezoid
 
 saw:
 	DACOUT r17              ; 1 + 2 + 2 = 5

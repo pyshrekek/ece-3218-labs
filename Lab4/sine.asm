@@ -25,7 +25,7 @@ reset:
     ldi  r16, 0xFF
     out  DDRD, r16          ; PD7..PD0 = data bus outputs
 	clr  r17
-	rjmp sine
+	rjmp sine_skip
 
 sine:
     ldi  r19, 0x80          ; XOR mask: 0x80 = positive half, 0x7F = negative half
