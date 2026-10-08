@@ -69,6 +69,9 @@ SPIN:
 
 ; ISR for external interrupt 0 (INT0)
 EXT_INT0:
+    ldi r24, low(100)
+    ldi r25, high(100)
+    rcall waitnms
     ; load count of number of times ISR has been executed and increment it
     lds r27,COUNT       ; load the current ISR count, high byte
     lds r26,COUNT+1     ; load the current ISR count, upper middle byte
