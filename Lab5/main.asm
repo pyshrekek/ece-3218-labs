@@ -28,6 +28,7 @@ main:
     ; (R0)<-0x00 aliased to ZERO
     clr ZERO
     ; go to program
+    ;rcall TESTNMS      ; prelab: uncomment to test waitnms in the simulator
     rcall L06P01
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -114,3 +115,45 @@ waitloop:               ; countdown 0x0F9D = 3997dec
     nop                 ; 1cc
     nop                 ; 1cc
     ret                 ; 4cc
+; n msec timer subroutine
+; input: r25:r24 = n, number of milliseconds to wait (0..65535)
+; r24, r25, and z are preserved (wait1ms clobbers z)
+; n must be 16 bits (2 bytes) since 1 byte only counts to 255
+; Each loop pass is wait1ms (16000cc incl. rcall) + sbiw (2cc) + brne (2cc).
+; From the rcall in the calling program through the ret, waitnms expends
+; 3[rcall]+8[push]+3[n==0 check]+(16004*n)-1[last brne]+8[pop]+4[ret]
+; = 16004n+25 cc, so n=1000 takes 16004025cc = 1.00025s at 16MHz.
+waitnms:
+    push r24            ; 2cc
+    push r25            ; 2cc
+    push zl             ; 2cc
+    push zh             ; 2cc
+    cp r24,ZERO         ; 1cc
+    cpc r25,ZERO        ; 1cc
+    breq waitnmsdone    ; 1cc false, if n==0 return immediately
+waitnmsloop:
+    rcall wait1ms       ; 16000cc incl. rcall and ret
+    sbiw r25:r24,1      ; 2cc, n <- n-1
+    brne waitnmsloop    ; 2cc true, 1cc false
+waitnmsdone:
+    pop zh              ; 2cc
+    pop zl              ; 2cc
+    pop r25             ; 2cc
+    pop r24             ; 2cc
+    ret                 ; 4cc
+
+; prelab test for waitnms
+; In the simulator set breakpoints on the rcall waitnms lines and on the
+; instruction after each, then compare the Cycle Counter / Stopwatch:
+; n=1 -> 16029cc, n=10 -> 160065cc, n=1000 -> 16004025cc (~1.00025s)
+TESTNMS:
+    ldi r24,low(1)
+    ldi r25,high(1)
+    rcall waitnms
+    ldi r24,low(10)
+    ldi r25,high(10)
+    rcall waitnms
+    ldi r24,low(1000)
+    ldi r25,high(1000)
+    rcall waitnms
+    ret
