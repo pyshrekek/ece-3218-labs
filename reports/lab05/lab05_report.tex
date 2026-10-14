@@ -1,0 +1,95 @@
+\documentclass[11pt]{article}
+
+% ---------- Packages ----------
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb}   % math
+\usepackage{graphicx}           % \includegraphics
+\usepackage{booktabs}           % nicer tables
+\usepackage{float}              % [H] placement
+\usepackage[font=small, skip=6pt]{caption}
+\usepackage{subcaption}         % side-by-side scope captures
+\usepackage{xcolor}
+\usepackage{listings}        % code blocks, pure TeX (no shell-escape)
+\usepackage[hidelinks]{hyperref}
+
+\graphicspath{{pictures/png/}{pictures/photos/}}
+
+% ---------- Code block style (applies to every code block) ----------
+% AVR assembly: listings ships no dialect for it, so define one.
+\lstdefinelanguage{avrasm}{
+  morekeywords={
+    add,adc,adiw,sub,subi,sbc,sbci,sbiw,and,andi,or,ori,eor,com,neg,inc,dec,tst,clr,ser,
+    mov,movw,ldi,ld,ldd,lds,st,std,sts,push,pop,in,out,lpm,
+    cp,cpc,cpi,cpse,breq,brne,brcs,brcc,brsh,brlo,brmi,brpl,brge,brlt,brts,brtc,
+    rjmp,jmp,ijmp,rcall,call,icall,ret,reti,nop,sleep,wdr,
+    lsl,lsr,rol,ror,asr,swap,sbi,cbi,sbic,sbis,sbrc,sbrs,sbr,cbr,set,clt,
+  },
+  morekeywords=[2]{.cseg,.dseg,.eseg,.org,.byte,.db,.dw,.equ,.def,.include,.macro,.endmacro},
+  alsoletter={.},          % so directives like .cseg tokenize as one word
+  morecomment=[l]{;},
+  morestring=[b]",
+  sensitive=false,
+}
+\lstdefinestyle{labcode}{
+  basicstyle=\ttfamily\small,
+  numbers=left, numberstyle=\tiny\color{gray!70}, numbersep=9pt,
+  xleftmargin=2.2em, framexleftmargin=2.2em,   % background covers the number gutter
+  breaklines=true, breakatwhitespace=true,
+  frame=lines, framesep=2mm,
+  backgroundcolor=\color{gray!8},
+  keywordstyle=\color{blue!65!black}\bfseries,
+  keywordstyle=[2]\color{purple!70!black},
+  commentstyle=\color{green!40!black},
+  stringstyle=\color{orange!85!black},
+  showstringspaces=false,
+  tabsize=4,
+  captionpos=t,
+}
+\lstset{style=labcode}
+\renewcommand{\lstlistingname}{Code}   % caption says "Code 1" instead of "Listing 1"
+
+% ---------- Report info (edit these) ----------
+\newcommand{\course}{ECE 3218L}
+\newcommand{\labtitle}{Lab 5}
+\newcommand{\studentname}{Daniel Xu}
+\newcommand{\labdate}{10/08/2026}
+
+% article.cls always typesets title -> author -> date, so the date goes in the
+% title block to sit directly under it. \date{} is required; empty means \today.
+\title{\labtitle \\[0.3em] \large \labdate}
+\author{\studentname \\ \small \course{} \,}
+\date{}
+
+% One oscilloscope capture inside a two-column figure.
+\newcommand{\scope}[3]{%
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{#1}
+    \caption{#2}
+    \label{#3}
+  \end{subfigure}}
+
+\begin{document}
+\maketitle
+
+\section{Overview}
+
+% TODO
+
+\section{Procedure}
+% TODO
+
+\section{Discussion}
+% TODO
+
+\section{Conclusion}
+% TODO
+
+\appendix
+\section{Full Code}
+\label{app:code}
+
+% \begin{lstlisting}[language=avrasm,caption={Program 1. ...},label={code:prog1}]
+% \end{lstlisting}
+
+\end{document}
