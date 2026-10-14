@@ -55,12 +55,38 @@ Desktop.ini
 *~
 # LaTeX build artifacts
 *.aux
+*.bbl
+*.bcf
+*.blg
+*.brf
 *.fdb_latexmk
 *.fls
-*.log
-*.out
-*.synctex.gz
-*.toc
+*.glg
+*.glo
+*.gls
+*.idx
+*.ilg
+*.ind
+*.ist
 *.lof
+*.log
 *.lot
-.vscode
+*.nav
+*.out
+*.run.xml
+*.snm
+*.synctex
+*.synctex.gz
+*.synctex(busy)
+*.toc
+*.vrb
+*.xdv
+*-blx.bib
+_minted*/
+*.pyg
+
+# macOS resource-fork files
+._*
+
+# Editor settings
+.vscode/
