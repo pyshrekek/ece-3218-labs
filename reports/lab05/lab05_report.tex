@@ -12,6 +12,9 @@
 \usepackage{listings}        % code blocks, pure TeX (no shell-escape)
 \usepackage[hidelinks]{hyperref}
 
+% Draft marker: red text for anything still to be filled in from the lab notebook.
+\newcommand{\fillin}[1]{\textcolor{red}{[#1]}}
+
 \graphicspath{{pictures/png/}{pictures/photos/}}
 
 % ---------- Code block style (applies to every code block) ----------
@@ -23,6 +26,7 @@
     cp,cpc,cpi,cpse,breq,brne,brcs,brcc,brsh,brlo,brmi,brpl,brge,brlt,brts,brtc,
     rjmp,jmp,ijmp,rcall,call,icall,ret,reti,nop,sleep,wdr,
     lsl,lsr,rol,ror,asr,swap,sbi,cbi,sbic,sbis,sbrc,sbrs,sbr,cbr,set,clt,
+    sei,cli,clz,sez,clc,sec,
   },
   morekeywords=[2]{.cseg,.dseg,.eseg,.org,.byte,.db,.dw,.equ,.def,.include,.macro,.endmacro},
   alsoletter={.},          % so directives like .cseg tokenize as one word
@@ -50,7 +54,7 @@
 
 % ---------- Report info (edit these) ----------
 \newcommand{\course}{ECE 3218L}
-\newcommand{\labtitle}{Lab 5}
+\newcommand{\labtitle}{Lab 5: Ports, Interrupts, and (Bouncy) Switches}
 \newcommand{\studentname}{Daniel Xu}
 \newcommand{\labdate}{10/08/2026}
 
@@ -73,23 +77,178 @@
 \maketitle
 
 \section{Overview}
+Besides acting as plain inputs and outputs, the port pins of the ATmega328P can request interrupts. Port D pins 2 and 3 are the external interrupts INT0 and INT1, which can respond to a low level or any edge. Every port pin can also generate a pin change interrupt (PCINT) whenever its logic level changes.
 
-% TODO
+This lab used both kinds. The first program toggles an LED from the INT0 interrupt each time a push button is pressed. The interrupt service routine (ISR) was given a software delay to debounce the button. The second program triggers a pin change interrupt from its own output pin once per second, and the ISR toggles a second LED so that the two LEDs alternate.
 
 \section{Procedure}
-% TODO
+Figure~\ref{fig:schematic} shows the circuit. The push button connects Port D pin 2 (Digital 2) to ground. With the pin's internal pull-up enabled, the pin sits high by default, and a button press pulls it low. LED~1 is driven by Port B pin 0 (Digital 8) and LED~2 by Port C pin 0 (Analog 0). Both LEDs are active high: writing a 1 to the port bit turns the LED on.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.45\textwidth]{pictures/schematic.png}
+  \caption{Lab circuit. This was built on the provided breakout board in lab, which had integrated switches, LEDs, and resistors.}
+  \label{fig:schematic}
+\end{figure}
+
+\begin{enumerate}
+\item \textbf{Program 1 without debouncing.} The program from the handout sets PB0 as an output, makes PD2 an input with its pull-up enabled, enables interrupts, and waits for an interrupt while in the spin loop. Each time the ISR runs, it adds one to the 32-bit variable COUNT (SRAM 0x0102--0x0105), toggles PB0, and records the new LED state in LEDON (0x0100).
+
+After the program had run for a few seconds, execution was paused and SRAM 0x0100--0x0105 was confirmed to be all zeros. The program was then resumed. The button was pressed firmly, held for about half a second, and released, and COUNT was read from memory. This was repeated for five presses. The data is shown in Table~\ref{tab:count}.
+
+\begin{table}[H]
+  \centering
+  \caption{COUNT after one press of about half a second, without debouncing.}
+  \label{tab:count}
+  \begin{tabular}{crr}
+    \toprule
+    Trial & COUNT (hex) & COUNT (decimal) \\
+    \midrule
+    1 & 0x0005FD34 & 392500 \\
+    2 & 0x0003774A & 227146 \\
+    3 & 0x00031379 & 201593 \\
+    4 & 0x0003292C & 207148 \\
+    5 & 0x00038D25 & 232741 \\
+    \midrule
+    Average & & 252225.6 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\item \textbf{Millisecond delay.} The lab manual provided wait1ms, which spends exactly 16000 clock cycles (1~ms at 16~MHz) including its call and return. A subroutine waitnms was written that calls wait1ms $n$ times, with $n$ passed in r25:r24 (Code~\ref{code:waitnms}). Since 1000 does not fit in 8 bits (the maximum is 255), the counter must be 2 bytes wide.
+
+\begin{lstlisting}[language=avrasm,caption={The $n$-millisecond delay used for debouncing.},label={code:waitnms}]
+waitnms:
+    push r24            ; 2
+    push r25            ; 2
+    push zl             ; 2
+    push zh             ; 2
+    cp r24,ZERO         ; 1
+    cpc r25,ZERO        ; 1
+    breq waitnmsdone    ; 1 if n != 0
+waitnmsloop:
+    rcall wait1ms       ; 16000 total with rcall and ret
+    sbiw r25:r24,1      ; 2
+    brne waitnmsloop    ; 2 if taken, 1 if not
+waitnmsdone:
+    pop zh              ; 2
+    pop zl              ; 2
+    pop r25             ; 2
+    pop r24             ; 2
+    ret                 ; 4
+\end{lstlisting}
+
+From the rcall to the ret, the subroutine takes $16004n + 25$ cycles, which predicts 16029, 160065, and 16004025 cycles for $n = 1$, 10, and 1000, so a 1000~ms request lasts 1.00025~s.
+
+\item \textbf{Program 1 with debouncing.} A delay was added as the first step of the INT0 ISR so that the switch stops bouncing before the LED is toggled:
+
+\begin{lstlisting}[language=avrasm,caption={Start of the debounced INT0 ISR.},label={code:debounce}]
+EXT_INT0:
+    ldi r24, low(150)   ; wait 150 ms
+    ldi r25, high(150)
+    rcall waitnms
+\end{lstlisting}
+
+A 500~ms delay was tried first. It debounced the button, but the LED responded noticeably late. The delay was then shortened to 150~ms. With this delay, brief taps toggled the LED once, but holding the button made the LED switch on and off every 150~ms. Since a normal press is a brief tap, 150~ms was kept. To check it, the button was pressed 10 times, and COUNT read 0x0000000A, equal to the number of presses.
+
+\item \textbf{Program 2: pin change interrupt.} The second program makes PC0 an output and sets it high, so LED~2 starts on and LED~1 starts off. It enables pin change interrupt group 1 (Port C) in PCICR, unmasks only PCINT8 (PC0) in PCMSK1, and clears any pending flag in PCIFR.
+
+\begin{lstlisting}[language=avrasm,caption={Pin change interrupt setup for PC0.},label={code:pcint}]
+    ldi r16,(1<<PCIE1)  ; enable pin change group 1 (Port C)
+    sts PCICR,r16
+    ldi r16,(1<<PCINT8) ; only PC0 in that group
+    sts PCMSK1,r16
+    ldi r16,(1<<PCIF1)  ; clear a stale request (writing 1 clears it)
+    out PCIFR,r16
+\end{lstlisting}
+
+The main loop waits 1000~ms and then toggles PC0, using the variable PCLH to remember the pin's state. Each toggle is a pin change on PCINT8, so it requests the PCINT1 interrupt. The PCINT1 ISR increments COUNT and toggles PB0 using LEDON, the same way as the ISR in Program~1. On the board, the two LEDs alternated, each on for one second while the other was off.
+\end{enumerate}
 
 \section{Discussion}
-% TODO
+\subsection{Why COUNT Was So Large}
+A single press of the button increased COUNT by hundreds of thousands rather than by one (Table~\ref{tab:count}). The LED turned on as soon as the button was pressed, looked dimmer while the button was held, and became brighter when it was released. After release, it stayed on in some trials and off in others. COUNT is the number of times the INT0 ISR ran.
+
+Part of the count comes from switch bounce: when the contacts close, they bounce open and closed for a few milliseconds before settling, and each closure pulls PD2 low. However, the main reason the count is so large is the trigger mode. Writing 0 to EICRA selects a \emph{low-level} interrupt, which is requested continuously for as long as PD2 is low, not once per falling edge. This means that as long as the button is held, the interrupt will keep running and COUNT will increment.
+
+The LED being dimmer while held makes sense, since the ISR kept running, which would quickly toggle the LED on and off, making it seem dimmer. When released, it would unpredictably be left on or off depending on whether the ISR ran an odd or even number of times.
+
+Table~\ref{tab:isr} counts the cycles for one pass through the original ISR using the instruction timings from the AVR Instruction Set Manual.
+
+\begin{table}[H]
+  \centering
+  \caption{Clock cycles for one pass through the INT0 ISR without the delay.}
+  \label{tab:isr}
+  \begin{tabular}{lcc}
+    \toprule
+    & \multicolumn{2}{c}{Cycles} \\
+    \cmidrule(l){2-3}
+    Code & LED off $\to$ on & LED on $\to$ off \\
+    \midrule
+    (interrupt response) & 4 & 4 \\
+    jmp EXT\_INT0 & 3 & 3 \\
+    lds r27,COUNT & 2 & 2 \\
+    lds r26,COUNT+1 & 2 & 2 \\
+    lds r25,COUNT+2 & 2 & 2 \\
+    lds r24,COUNT+3 & 2 & 2 \\
+    adiw r25:r24,1 & 2 & 2 \\
+    brcc NOUHINC & 2 & 2 \\
+    lds r17,LEDON & 2 & 2 \\
+    tst r17 & 1 & 1 \\
+    brne ITSON & 1 & 2 \\
+    sbi PORTB,0 & 2 & -- \\
+    sbr r17,1 & 1 & -- \\
+    rjmp DUNIT & 2 & -- \\
+    cbi PORTB,0 & -- & 2 \\
+    clr r17 & -- & 1 \\
+    sts LEDON,r17 & 2 & 2 \\
+    sts COUNT,r27 & 2 & 2 \\
+    sts COUNT+1,r26 & 2 & 2 \\
+    sts COUNT+2,r25 & 2 & 2 \\
+    sts COUNT+3,r24 & 2 & 2 \\
+    reti & 4 & 4 \\
+    \midrule
+    Total in the ISR & 42 & 41 \\
+    rjmp SPIN & 2 & 2 \\
+    \midrule
+    Total per count & 44 & 43 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+When the LED goes from off to on, the toggle branch takes 6 cycles and one pass through the ISR takes 42 cycles, or 2.6~$\mu$s at 16~MHz. Multiplying the average count by the time per pass estimates how long the ISR ran during one press:
+\begin{equation}
+  t \approx \text{COUNT} \times \frac{42}{16 \times 10^{6}\ \text{Hz}} = 252225.6 \times \frac{42}{16 \times 10^{6}\ \text{Hz}} \approx 0.662~\text{s}.
+\end{equation}
+Counting the 2-cycle rjmp SPIN that runs between passes raises the cost to 44 cycles per count and the estimate to 0.694~s. The button press was timed by hand, which explains the higher-than-expected number.
+
+This estimate only measures how long PD2 was low in total. Measuring the average time between bounces needs two changes to the program. First, INT0 should trigger on a falling edge (ISC01 = 1 in EICRA) instead of a low level, so each bounce produces exactly one interrupt and COUNT becomes the number of bounces. Second, another counter should be incremented inside the SPIN loop, so the program also knows how many times the main loop ran between interrupts. Each pass of the SPIN loop and of the ISR takes a known number of cycles, so the total elapsed time can be found through a simple calculation similar to the one above.
+
+\subsection{Debouncing in Software}
+Bouncing is usually removed in hardware with an SR latch or a Schmitt trigger. Here it was handled in software by waiting at the start of the ISR. The interrupt is not re-entered during the delay, because the processor clears the global interrupt flag when it enters an ISR and only reti sets it again. By the time the delay ends, the contacts have settled, and the LED is toggled once. If the button is held and PD2 is still low, then the ISR will trigger a second time, which explains the toggling LED when held with the 150~ms delay.
+
+\subsection{Why Program 2 Needs No Delay}
+The PCINT1 ISR needs no debounce delay because nothing mechanical drives PC0. The pin is an output written by the processor itself, so each toggle is one clean transition and produces exactly one pin change interrupt. The ISR also needs no timer of its own, because the program is entirely software-controlled: the 1~s delay already runs in the main loop, and the ISR only reacts to the edge the main loop creates. A pin change interrupt fires on both rising and falling edges, which is why the ISR runs on every toggle of PC0, in both directions.
+
+\subsection{Why Use a Self-Triggered Interrupt?}
+
+The AVR has no software interrupt instruction, so a self-triggered pin change interrupt is a way to simulate one. A subroutine call runs the code as part of the main program, while the interrupt runs it as an ISR, with other interrupts held off until it returns.
+
+Using a pin change interrupt also makes sense if the same routine needs to be triggered by both software and hardware. An external device could trigger it by changing the pin's level, while software could trigger it the same way this lab did.
+
+Toggling a pin to trigger an interrupt also makes sense when the ISR needs to be tested on the Uno before the external hardware is connected.
 
 \section{Conclusion}
-% TODO
+This lab configured ATmega328P port pins to generate interrupts from both an external event and the program's own output. One half-second button press ran the ISR an average of 252225.6 times, because the interrupt repeats for as long as the pin is low. At 42 clock cycles per pass, that count corresponds to about 0.66~s of the pin being held low, which makes sense given human error in counting time. Adding a 150~ms delay at the start of the ISR made each brief tap toggle the LED once, and after 10 presses COUNT read 0x0000000A. The second program toggled PC0 once per second to trigger an edge-triggered pin change interrupt, and its ISR alternated the second LED without any debouncing, because a pin driven by the processor does not bounce.
 
 \appendix
 \section{Full Code}
 \label{app:code}
 
-% \begin{lstlisting}[language=avrasm,caption={Program 1. ...},label={code:prog1}]
-% \end{lstlisting}
+% Read straight from the Lab5 project so the listings always match the code.
+% \footnotesize so the handout's 72-character ;;;; banner lines fit.
+\lstinputlisting[language=avrasm,basicstyle=\ttfamily\footnotesize,caption={Program 1. Toggle the LED with a debounced push button.},label={app:main}]{../../Lab5/main.asm}
+
+\lstinputlisting[language=avrasm,basicstyle=\ttfamily\footnotesize,caption={Program 2. Alternating LEDs with a pin change interrupt.},label={app:pinchange}]{../../Lab5/pinchange.asm}
 
 \end{document}

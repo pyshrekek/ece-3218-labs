@@ -1,24 +1,24 @@
-; Every second the main loop toggles Port C pin 0 (Uno A0, PCINT8).
-; That pin change triggers the PCINT1 interrupt, whose ISR toggles
-; the LED on Port B pin 0 (Uno digital 8). The two LEDs alternate:
-; one is on while the other is off.
+; Lab 5, Program 2: alternating LEDs with a pin change interrupt
+; Once a second the main loop flips PC0 (Uno A0, PCINT8). That change
+; requests the PCINT1 interrupt, and its ISR flips the LED on PB0
+; (Uno pin 8), so one LED is always on while the other is off.
 
 .DEF ZERO=R0
 
 .dseg                       ; SRAM variables
-LEDON:  .byte 1             ; PB0 LED status  ~0 ==> ON, 0 ==> OFF   (0x0100)
-PCLH:   .byte 1             ; PC0 pin status   1 ==> High, 0 ==> Low (0x0101)
-COUNT:  .byte 4             ; number of times the ISR ran, high byte first (0x0102-0x0105)
+LEDON:  .byte 1             ; LED status ~0 ==> ON, 0 ==> OFF
+PCLH:   .byte 1             ; Port C pin 0 status 1 ==> High, 0 ==> Low for PCINT0
+COUNT:  .byte 4             ; number of times the interrupt routine was executed
 
-; interrupt vector table
+; interrupt table
 ; this program requires RESET and PCINT1
 .cseg
 .org 0x0000
-        jmp RESET           ; Reset handler
-.org PCI1addr               ; 0x0008: pin change interrupt 1 (Port C, PCINT8-14)
-        jmp PC_INT1         ; PCINT1 handler
+        jmp RESET           ; Reset Handler
+.org PCI1addr
+        jmp PC_INT1         ; PCINT1 Handler
 
-.org INT_VECTORS_SIZE       ; start the program after the whole vector table
+.org INT_VECTORS_SIZE       ; code starts after the vector table
 RESET:
         ; initialize stack pointer
         ldi r16,high(RAMEND)
@@ -29,63 +29,60 @@ RESET:
         clr ZERO
 
         ; initialize variables
-        sts LEDON,ZERO      ; PB0 LED starts off
-        sts COUNT,ZERO      ; clear ISR count (all 4 bytes)
-        sts COUNT+1,ZERO
-        sts COUNT+2,ZERO
-        sts COUNT+3,ZERO
+        ; LED status flag
+        sts LEDON,ZERO      ; 0 ==> LED is not on
+        ; number of times the ISR has been executed
+        sts COUNT,ZERO      ; clear ISR count high byte
+        sts COUNT+1,ZERO    ; clear ISR count upper middle byte
+        sts COUNT+2,ZERO    ; clear ISR count lower middle byte
+        sts COUNT+3,ZERO    ; clear ISR count low byte
 
-        ; Port B pin 0: output, LED 1 off
-        sbi DDRB,0          ; PB0 is an output
-        cbi PORTB,0         ; PB0 low ==> LED 1 off
+        ; set up port B for output to LED
+        sbi DDRB,0          ; bit 0 in Port B DDR <- 1, data direction out
+        cbi PORTB,0         ; bit 0 in Port B <- 0, turn off the LED
 
-        ; Port C pin 0: output, LED 2 on
-        sbi DDRC,0          ; PC0 is an output
-        sbi PORTC,0         ; PC0 high ==> LED 2 on
+        ; LED 2 on PC0 starts on
+        sbi DDRC,0
+        sbi PORTC,0
         ldi r16,1
-        sts PCLH,r16        ; record that PC0 is high
+        sts PCLH,r16        ; remember that PC0 is high
 
-        ; set up pin change interrupt on PCINT8 (= PC0)
-        ; PCICR and PCMSK1 are in extended I/O space, so use sts (sbi can't reach them)
-        ldi r16,(1<<PCIE1)  ; enable pin change interrupt group 1 (Port C)
+        ; let a change on PC0 (PCINT8) request PCINT1
+        ; sbi/out can't reach PCICR and PCMSK1, so use sts
+        ldi r16,(1<<PCIE1)  ; enable pin change group 1 (Port C)
         sts PCICR,r16
-        ldi r16,(1<<PCINT8) ; within group 1, only PCINT8 (PC0) triggers it
+        ldi r16,(1<<PCINT8) ; only PC0 in that group
         sts PCMSK1,r16
-        ldi r16,(1<<PCIF1)  ; clear any pending PCINT1 flag (write 1 to clear)
+        ldi r16,(1<<PCIF1)  ; clear a stale request (writing 1 clears it)
         out PCIFR,r16
 
         sei                 ; enable interrupts globally
 
-; main loop: wait 1 second, toggle PC0, repeat
-; toggling PC0 is what generates the pin change interrupt
+; main loop: wait 1 s, then flip PC0, which triggers the interrupt
 MAINLOOP:
-        ldi r28,low(1000)   ; n = 1000 ms in Y (r29:r28)
-        ldi r29,high(1000)  ; 1000 > 255, so a 16-bit counter is needed
+        ldi r28,low(1000)   ; Y = 1000 ms
+        ldi r29,high(1000)  ; 1000 needs 16 bits
         rcall waitNms
 
-        ; toggle PC0 using the PCLH status variable
-        lds r16,PCLH        ; get PC0 status
-        tst r16             ; is it low?
-        brne PCHIGH         ; no? it's high, go drive it low
-        sbi PORTC,0         ; yes? drive PC0 high (LED 2 on)
-        ldi r16,1           ; status <- high
+        ; flip PC0
+        lds r16,PCLH
+        tst r16
+        brne PCHIGH         ; PC0 high -> low
+        sbi PORTC,0         ; PC0 low -> high (LED 2 on)
+        ldi r16,1
         rjmp PCSAVE
 PCHIGH:
-        cbi PORTC,0         ; drive PC0 low (LED 2 off)
-        clr r16             ; status <- low
+        cbi PORTC,0         ; LED 2 off
+        clr r16
 PCSAVE:
-        sts PCLH,r16        ; save PC0 status
+        sts PCLH,r16
         rjmp MAINLOOP
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; ISR for pin change interrupt 1 (PCINT1)
-; Runs once per edge on PC0, i.e. once per toggle in the main loop.
-; Saves every register it uses plus SREG, because the main loop is
-; busy (r16, the Z flag, the delay counters) when the interrupt hits.
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; PCINT1 ISR: count the interrupt, then toggle the LED on PB0
+; saves SREG and every register it uses, since it interrupts the main loop
 PC_INT1:
         push r16
-        in r16,SREG         ; save status register
+        in r16,SREG
         push r16
         push r17
         push r24
@@ -93,72 +90,74 @@ PC_INT1:
         push r26
         push r27
 
-        ; increment 32-bit ISR execution count
-        lds r27,COUNT       ; high byte
-        lds r26,COUNT+1     ; upper middle byte
-        lds r25,COUNT+2     ; lower middle byte
-        lds r24,COUNT+3     ; low byte
-        adiw r25:r24,1      ; increment lower half
-        brcc NOUHINC        ; if C==0, nothing to carry into the upper half
+        ; load count of number of times ISR has been executed and increment it
+        lds r27,COUNT       ; load the current ISR count, high byte
+        lds r26,COUNT+1     ; load the current ISR count, upper middle byte
+        lds r25,COUNT+2     ; load the current ISR count, lower middle byte
+        lds r24,COUNT+3     ; load the current ISR count, low byte
+        adiw r25:r24,1      ; increment the count
+        brcc NOUHINC        ; if C==0, nothing to add to the upper half
         adiw r27:r26,1      ; else add one to upper half
 NOUHINC:
-        sts COUNT,r27
-        sts COUNT+1,r26
-        sts COUNT+2,r25
-        sts COUNT+3,r24
+        ; save the ISR execution count
+        sts COUNT,r27       ; update the ISR count, high byte
+        sts COUNT+1,r26     ; update the ISR count, upper middle byte
+        sts COUNT+2,r25     ; update the ISR count, lower middle byte
+        sts COUNT+3,r24     ; update the ISR count, low byte
 
-        ; toggle the PB0 LED state
-        lds r17,LEDON       ; get LED status
+        ; toggle the LED state
+        lds r17,LEDON       ; get the LED status in r17
         tst r17             ; is it zero?
-        brne ITSON          ; no? LED is on; go turn it off
-        sbi PORTB,0         ; yes? it's off; turn it on
-        ldi r17,1           ; set the flag
+        brne ITSON          ; no? then the LED is on; go turn it off
+        sbi PORTB,0         ; yes? then it's off; turn it on
+        ldi r17,1           ; set the flag in r17
         rjmp DUNIT
 ITSON:
         cbi PORTB,0         ; turn it off
-        clr r17             ; clear the flag
+        clr r17             ; clear the flag in r17
 DUNIT:
-        sts LEDON,r17       ; save LED status
+        sts LEDON,r17       ; save r17 to the LED status flag
 
+        ; restore in reverse order
         pop r27
         pop r26
         pop r25
         pop r24
         pop r17
         pop r16
-        out SREG,r16        ; restore status register
+        out SREG,r16
         pop r16
         reti
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; n msec delay
-; Input: Y (r29:r28) = n, number of milliseconds (n must be >= 1;
-;        n = 0 would wrap around to 65536 ms)
-; Uses:  Z (saved/restored), Y (counted down to 0)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; waitNms: wait n ms
+; load n (at least 1) into Y (r29:r28)
+; Y ends at 0; Z is restored before returning
 waitNms:
-        push r30            ; wait1ms uses Z, so save it
+        push r30            ; wait1ms changes Z
         push r31
 WNLOOP:
-        rcall wait1ms       ; wait 1 ms
-        sbiw r29:r28,1      ; n <- n - 1
-        brne WNLOOP         ; repeat until n == 0
+        rcall wait1ms       ; 16000 total with rcall and ret
+        sbiw r29:r28,1
+        brne WNLOOP
         pop r31
         pop r30
         ret
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; 1 msec timer subroutine (exact; time includes call and return)
-; 3+1+1+1+(3996*4)+3+1+1+1+4 = 16000  = 1 ms at 16 MHz
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; wait1ms expends 16000 clock cycles.
+; rcall wait1ms uses 3 clock cycles
+; Therefore from the rcall in the calling program through the
+; ret in the subroutine wait1ms expends
+; 3+1+1+1+(3996*4)[in loop]+3[end of loop]+1+1+1+4 = 16000cc
+; which at 16MHz (cc/s) equals 1ms.
 wait1ms:
-        ldi zh,0x0F         ; 1
-        ldi zl,0x9D         ; 1
-        clz                 ; 1
-waitloop:                   ; countdown 0x0F9D = 3997 dec
-        sbiw r31:r30,1      ; 2
-        brne waitloop       ; 2 true, 1 false
-        nop                 ; 1
-        nop                 ; 1
-        nop                 ; 1
-        ret                 ; 4
+        ldi zh,0x0F         ; 1cc
+        ldi zl,0x9D         ; 1cc
+        clz                 ; 1cc
+waitloop:                   ; countdown 0x0F9D = 3997dec
+        sbiw r31:r30,1      ; 2cc
+        brne waitloop       ; 2cc true, 1cc false
+        nop                 ; 1cc
+        nop                 ; 1cc
+        nop                 ; 1cc
+        ret                 ; 4cc
