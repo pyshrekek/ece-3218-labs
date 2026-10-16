@@ -1,0 +1,196 @@
+\documentclass[11pt]{article}
+
+% ---------- Packages ----------
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb}   % math
+\usepackage{graphicx}           % \includegraphics
+\usepackage{booktabs}           % nicer tables
+\usepackage{float}              % [H] placement
+\usepackage[font=small, skip=6pt]{caption}
+\usepackage{subcaption}         % side-by-side scope captures
+\usepackage{xcolor}
+\usepackage{listings}        % code blocks, pure TeX (no shell-escape)
+\usepackage[hidelinks]{hyperref}
+
+% Draft marker: red text for anything still to be filled in from the lab notebook.
+\newcommand{\fillin}[1]{\textcolor{red}{[#1]}}
+
+\graphicspath{{pictures/}}
+
+% ---------- Code block style (applies to every code block) ----------
+% AVR assembly: listings ships no dialect for it, so define one.
+\lstdefinelanguage{avrasm}{
+  morekeywords={
+    add,adc,adiw,sub,subi,sbc,sbci,sbiw,and,andi,or,ori,eor,com,neg,inc,dec,tst,clr,ser,
+    mov,movw,ldi,ld,ldd,lds,st,std,sts,push,pop,in,out,lpm,
+    cp,cpc,cpi,cpse,breq,brne,brcs,brcc,brsh,brlo,brmi,brpl,brge,brlt,brts,brtc,
+    rjmp,jmp,ijmp,rcall,call,icall,ret,reti,nop,sleep,wdr,
+    lsl,lsr,rol,ror,asr,swap,sbi,cbi,sbic,sbis,sbrc,sbrs,sbr,cbr,set,clt,
+    sei,cli,clz,sez,clc,sec,
+  },
+  morekeywords=[2]{.cseg,.dseg,.eseg,.org,.byte,.db,.dw,.equ,.def,.include,.macro,.endmacro},
+  alsoletter={.},          % so directives like .cseg tokenize as one word
+  morecomment=[l]{;},
+  morestring=[b]",
+  sensitive=false,
+}
+\lstdefinestyle{labcode}{
+  basicstyle=\ttfamily\small,
+  numbers=left, numberstyle=\tiny\color{gray!70}, numbersep=9pt,
+  xleftmargin=2.2em, framexleftmargin=2.2em,   % background covers the number gutter
+  breaklines=true, breakatwhitespace=true,
+  frame=lines, framesep=2mm,
+  backgroundcolor=\color{gray!8},
+  keywordstyle=\color{blue!65!black}\bfseries,
+  keywordstyle=[2]\color{purple!70!black},
+  commentstyle=\color{green!40!black},
+  stringstyle=\color{orange!85!black},
+  showstringspaces=false,
+  tabsize=4,
+  captionpos=t,
+}
+\lstset{style=labcode}
+\renewcommand{\lstlistingname}{Code}   % caption says "Code 1" instead of "Listing 1"
+
+% ---------- Report info (edit these) ----------
+\newcommand{\course}{ECE 3218L}
+\newcommand{\labtitle}{Lab 6: The Timer Unit}
+\newcommand{\studentname}{Daniel Xu}
+\newcommand{\labdate}{10/15/2026}
+
+% article.cls always typesets title -> author -> date, so the date goes in the
+% title block to sit directly under it. \date{} is required; empty means \today.
+\title{\labtitle \\[0.3em] \large \labdate}
+\author{\studentname \\ \small \course{} \,}
+\date{}
+
+% One oscilloscope capture inside a two-column figure.
+\newcommand{\scope}[3]{%
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{#1}
+    \caption{#2}
+    \label{#3}
+  \end{subfigure}}
+
+\begin{document}
+\maketitle
+
+\section{Overview}
+% Timer1: 16-bit counter, output compare (OC1A on PB1) and input capture (ICP1 on PB0).
+% What the three programs do: rectangular wave, a sequence of tones, half-frequency copy of an input.
+
+\section{Procedure}
+% Connections: OC1A (PB1, Uno pin 9) to the scope / piezo, ICP1 (PB0, Uno pin 8) from the
+% function generator, common ground. Generator checked for 0-5 V before connecting.
+
+% \begin{figure}[H]
+%   \centering
+%   \includegraphics[width=0.45\textwidth]{connections.png}
+%   \caption{Connections.}
+%   \label{fig:connections}
+% \end{figure}
+
+\begin{enumerate}
+\item \textbf{Program 1: Rectangular wave.}
+% SETWAVE: inputs (pw, duty code, prescaler), high/low widths from right shifts,
+% 75% and 87.5% as the inverse of 25% and 12.5%, CTC + toggle OC1A, ISR swaps OCR1A.
+% Prescaler choice (pre-lab questions a-i): count = fcc * pw / sp, sp = 1, count = 36364.
+
+\begin{table}[H]
+  \centering
+  \caption{Program 1 at 440 Hz ($pw = 36364$ clicks, prescaler 1).}
+  \label{tab:duty}
+  \begin{tabular}{crrrr}
+    \toprule
+    & \multicolumn{2}{c}{Expected} & \multicolumn{2}{c}{Measured} \\
+    \cmidrule(lr){2-3} \cmidrule(l){4-5}
+    Duty cycle & High & Low & High & Low \\
+    \midrule
+    12.5\% & 284.1~$\mu$s & 1.989~ms & \fillin{} & \fillin{} \\
+    25\%   & 568.2~$\mu$s & 1.705~ms & \fillin{} & \fillin{} \\
+    50\%   & 1.136~ms     & 1.136~ms & \fillin{} & \fillin{} \\
+    75\%   & 1.705~ms     & 568.2~$\mu$s & \fillin{} & \fillin{} \\
+    87.5\% & 1.989~ms     & 284.1~$\mu$s & \fillin{} & \fillin{} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\item \textbf{Program 2: Tones.}
+% Tone periods copied to SRAM, then for each: SETWAVE at 50%, wait 500 ms, stop the clock
+% (clear TCCR1B), wait 500 ms. What the scale sounded like.
+
+\begin{table}[H]
+  \centering
+  \caption{Tone periods at prescaler 1 ($pw = 16~\text{MHz} / f$).}
+  \label{tab:tones}
+  \begin{tabular}{lrr}
+    \toprule
+    Note & Frequency (Hz) & $pw$ (clicks) \\
+    \midrule
+    C4 & 261.63 & 61155 \\
+    D4 & 293.66 & 54485 \\
+    E4 & 329.63 & 48539 \\
+    F4 & 349.23 & 45815 \\
+    G4 & 392.00 & 40816 \\
+    A4 & 440.00 & 36364 \\
+    B4 & 493.88 & 32397 \\
+    C5 & 523.25 & 30578 \\
+    D5 & 587.33 & 27242 \\
+    E5 & 659.25 & 24270 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\item \textbf{Program 3: Input capture.}
+% Timer1 free-running at clk/8 (0.5 us per click). Capture ISR: PERIOD = ICR1 - previous.
+% Compare ISR: OCR1A += PERIOD, toggles OC1A once per input period -> half the input frequency.
+
+\begin{table}[H]
+  \centering
+  \caption{Program 3 input and output frequencies.}
+  \label{tab:capture}
+  \begin{tabular}{rrr}
+    \toprule
+    Input (Hz) & Expected output (Hz) & Measured output (Hz) \\
+    \midrule
+    1000 & 500 & \fillin{} \\
+    \fillin{} & \fillin{} & \fillin{} \\
+    \fillin{} & \fillin{} & \fillin{} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+\end{enumerate}
+
+\section{Discussion}
+\subsection{Program 1: Accuracy and Limits}
+% Did the scope match Table 1? Any deviation, and why (or why not).
+% Limits of the program and of the high/low portions: 16-bit OCR1A, ISR must finish
+% before the next match (~40 cycles), pw >= 8 for 12.5%. Note on 90% vs 87.5%.
+
+\subsection{Program 2: Frequency Range}
+% Smallest and largest frequency: 16 MHz / (sp * 65535) at the low end,
+% ISR time at the high end. Where each limit comes from.
+
+\subsection{Program 3: Measuring a Period}
+% Results explained to the TA. Rollover handling (16-bit subtraction).
+% Longest measurable period: 65535 * 0.5 us = 32.77 ms at clk/8.
+
+\section{Conclusion}
+% Two or three sentences.
+
+\appendix
+\section{Full Code}
+\label{app:code}
+
+% Read straight from the Lab6 project so the listings always match the code.
+% \footnotesize so long comment lines fit.
+\lstinputlisting[language=avrasm,basicstyle=\ttfamily\footnotesize,caption={Program 1. Rectangular wave (main.asm).},label={app:main}]{../../Lab6/main.asm}
+
+\lstinputlisting[language=avrasm,basicstyle=\ttfamily\footnotesize,caption={SETWAVE subroutine and compare ISR, used by Programs 1 and 2 (wave.inc).},label={app:wave}]{../../Lab6/wave.inc}
+
+\lstinputlisting[language=avrasm,basicstyle=\ttfamily\footnotesize,caption={Program 2. Tones (tones.asm).},label={app:tones}]{../../Lab6/tones.asm}
+
+\lstinputlisting[language=avrasm,basicstyle=\ttfamily\footnotesize,caption={Program 3. Input capture (capture.asm).},label={app:capture}]{../../Lab6/capture.asm}
+
+\end{document}
