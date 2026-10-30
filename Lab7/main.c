@@ -21,9 +21,9 @@
 
 /* ---- Settings ---------------------------------------------------------- */
 
-/* Set to 1 in lab once font.c, OLED.c and OLED.h are in this folder.
- * Leave at 0 to build before you have them.                          */
-#define USE_OLED 0
+/* 1 = show each step on the OLED (needs font.c, OLED.c, OLED.h in this
+ * folder). Set to 0 to build without them.                           */
+#define USE_OLED 1
 
 /* Prescaler for the first run of part 4 (see pwm_prescale_t in motors.h) */
 #define START_PRESCALE  PRESCALE_64
@@ -41,21 +41,23 @@
 
 static char text[50];
 
-/* Clear the screen and show one short message (keep it under ~20 chars) */
+/* Show one short message on the top line of the OLED.
+ * OLED_writeText() draws up to OLED_TEXT_MAX (16) characters and blanks
+ * the rest of the line, so leftovers from the previous message disappear
+ * without clearing the whole screen. Longer messages are cut off.        */
 static void show(const char *msg)
 {
-    OLED_clearDisplayRam();
     snprintf(text, sizeof text, "%s", msg);
     OLED_writeText(text);
 }
 
 static void oled_setup(void)
 {
-    OLED_Init();
+    OLED_init();                /* note: lowercase i in the provided OLED.c */
     OLED_reset();
     OLED_clearDisplayRam();
     OLED_configureDefault();
-    show("ECE2218");
+    show("Lab 7");
 }
 #else
 static void show(const char *msg) { (void)msg; }   /* does nothing */
@@ -117,13 +119,13 @@ static void part3_both_motors(void)
     brake_and_wait();
 
     /* Spinning CCW (seen from above): left wheel back, right wheel forward */
-    show("Spin CCW");
+    show("CCW");
     motors_set_full(MOTOR_REVERSE, MOTOR_FORWARD);
     delay_ms(RUN_FULL_MS);
     brake_and_wait();
 
     /* Spinning CW: left wheel forward, right wheel back */
-    show("Spin CW");
+    show("CW");
     motors_set_full(MOTOR_FORWARD, MOTOR_REVERSE);
     delay_ms(RUN_FULL_MS);
     brake_and_wait();
@@ -134,17 +136,17 @@ static void part4_quarter_speed(void)
 {
     const int16_t q = MOTOR_SPEED_QUARTER;
 
-    show("1/4 fwd");
+    show("1/4fwd");
     motors_set_speed(q, q);
     delay_ms(RUN_PWM_MS);
     brake_and_wait();
 
-    show("1/4 rev");
+    show("1/4rev");
     motors_set_speed(-q, -q);
     delay_ms(RUN_PWM_MS);
     brake_and_wait();
 
-    show("1/4 CCW");
+    show("1/4CCW");
     motors_set_speed(-q, q);
     delay_ms(RUN_PWM_MS);
     brake_and_wait();
@@ -175,7 +177,7 @@ int main(void)
     button_a_init();        /* PB3 input with pull-up             */
     oled_setup();
 
-    show("Press A");
+    show("Push A");
     button_a_wait();        /* don't move until button A is pressed */
     delay_ms(500);          /* time to get your hand clear          */
 
@@ -191,7 +193,7 @@ int main(void)
 
     /* ---- Prescaler experiment: A = next prescaler, repeat part 4 ---- */
     for (;;) {
-        show("A: next N");
+        show("A=next");
         button_a_wait();
 
         prescale = (prescale >= PRESCALE_1024) ? PRESCALE_1 : prescale + 1;

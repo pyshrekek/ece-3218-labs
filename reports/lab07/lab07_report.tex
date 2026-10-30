@@ -1,0 +1,265 @@
+\documentclass[11pt]{article}
+
+% ---------- Packages ----------
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}            % Latin Modern: has bold typewriter for code keywords
+\usepackage{array}              % ragged-right p{} table columns
+\usepackage{amsmath, amssymb}   % math
+\usepackage{graphicx}           % \includegraphics
+\usepackage{booktabs}           % nicer tables
+\usepackage{float}              % [H] placement
+\usepackage[font=small, skip=6pt]{caption}
+\usepackage{subcaption}         % side-by-side figures
+\usepackage{xcolor}
+\usepackage{listings}        % code blocks, pure TeX (no shell-escape)
+\usepackage[hidelinks]{hyperref}
+
+% Draft marker: red text for anything still to be filled in from the lab notebook.
+\newcommand{\fillin}[1]{\textcolor{red}{[#1]}}
+
+\graphicspath{{pictures/}}
+
+% ---------- Code block style (applies to every code block) ----------
+\lstdefinestyle{labcode}{
+  language=C,
+  basicstyle=\ttfamily\small,
+  columns=fullflexible, keepspaces=true,   % natural monospace spacing; alignment kept
+  numbers=left, numberstyle=\tiny\color{gray!70}, numbersep=9pt,
+  xleftmargin=2.2em, framexleftmargin=2.2em,   % background covers the number gutter
+  breaklines=true, breakatwhitespace=true,
+  frame=lines, framesep=2mm,
+  backgroundcolor=\color{gray!8},
+  keywordstyle=\color{blue!65!black}\bfseries,
+  commentstyle=\color{green!40!black},
+  stringstyle=\color{orange!85!black},
+  morekeywords={uint8_t,int16_t,uint16_t},
+  showstringspaces=false,
+  tabsize=4,
+  captionpos=t,
+}
+\lstset{style=labcode}
+\renewcommand{\lstlistingname}{Code}   % caption says "Code 1" instead of "Listing 1"
+
+% ---------- Report info (edit these) ----------
+\newcommand{\course}{ECE 3218L}
+\newcommand{\labtitle}{Lab 7: Motor Control of the Pololu 3pi+ Robot using Pulse-Width Modulation}
+\newcommand{\studentname}{Daniel Xu}
+\newcommand{\labdate}{10/28/2026}
+
+% article.cls always typesets title -> author -> date, so the date goes in the
+% title block to sit directly under it. \date{} is required; empty means \today.
+\title{\labtitle \\[0.3em] \large \labdate}
+\author{\studentname \\ \small \course{} \,}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Overview}
+The Pololu 3pi+ 32U4 is a small two-wheeled robot built around an ATmega32U4 running at 16~MHz. Each wheel is driven by a brushed DC motor through its own TI DRV8838 motor driver. Each driver has two control inputs from the microcontroller: a direction pin (PH) that selects forward or reverse, and an enable pin (EN) that switches the motor on. When EN is low, the driver brakes the motor by shorting its terminals.
+
+This lab controlled the motors in two ways. In the first, the enable pins were used as plain digital outputs, so each motor either ran at full speed or braked. In the second, Timer1 generated phase-correct pulse-width modulation (PWM) on the enable pins, switching each motor between driving and braking fast enough that it ran at a fraction of full speed. The program waits for button A, runs a set of full-speed tests on each motor and then both motors, and finally runs the same moves at quarter speed with PWM. In lab, the course-provided OLED driver was used to show the current step on the robot's display, and the quarter-speed tests were repeated with each of the five Timer1 prescalers to find the best PWM frequency.
+
+\section{Procedure}
+The programs were written in C and built with avr-gcc and a Makefile instead of Microchip Studio. They were loaded over the robot's USB port through its bootloader, using avrdude. The program is split into three modules: \texttt{motors.c} drives the motor pins and Timer1, \texttt{button.c} reads button A, and \texttt{main.c} runs the test sequence. The full code is in Appendix~\ref{app:code}.
+
+% \begin{figure}[H]
+%   \centering
+%   \includegraphics[width=0.45\textwidth]{robot.jpg}
+%   \caption{The Pololu 3pi+ 32U4 used in this lab.}
+%   \label{fig:robot}
+% \end{figure}
+
+\begin{enumerate}
+\item \textbf{Setup.} Table~\ref{tab:pins} lists the Port B pins used by the motor drivers and button A, taken from the Pololu 3pi+ 32U4 User's Guide. All four motor pins were made outputs and set low, which brakes both motors. Button A connects PB3 to ground when pressed, so PB3 was made an input with its internal pull-up enabled: it reads high when released and low when pressed.
+
+\begin{table}[H]
+  \centering
+  \caption{Port B pins used in this lab.}
+  \label{tab:pins}
+  \begin{tabular}{lll}
+    \toprule
+    Pin & Function & Notes \\
+    \midrule
+    PB1 & Right motor direction (PH) & \\
+    PB2 & Left motor direction (PH) & \\
+    PB3 & Button A & Input, pull-up, low when pressed \\
+    PB5 & Right motor enable (EN) & OC1A \\
+    PB6 & Left motor enable (EN) & OC1B \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:drv} shows how the DRV8838 responds to its inputs. Setting EN high runs the motor, and PH picks the direction. Combining the two tables gives the Port B bit patterns for each move in Table~\ref{tab:patterns}. Only the four motor bits (mask 0x66) were ever changed, so that writing a motor pattern does not turn off the pull-up on PB3 or disturb PB0, which the OLED uses as its data/command pin.
+
+\begin{table}[H]
+  \centering
+  \caption{DRV8838 behavior with nSLEEP high.}
+  \label{tab:drv}
+  \begin{tabular}{ccl}
+    \toprule
+    EN & PH & Result \\
+    \midrule
+    0 & X & Brake (both outputs low) \\
+    1 & 0 & Forward \\
+    1 & 1 & Reverse \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \caption{Port B motor bits for each move (bits 6, 5, 2, 1 are L EN, R EN, L PH, R PH).}
+  \label{tab:patterns}
+  \begin{tabular}{lcc}
+    \toprule
+    Move & Binary & Hex \\
+    \midrule
+    Brake & 00000000 & 0x00 \\
+    Left forward & 01000000 & 0x40 \\
+    Left reverse & 01000100 & 0x44 \\
+    Right forward & 00100000 & 0x20 \\
+    Right reverse & 00100010 & 0x22 \\
+    Both forward & 01100000 & 0x60 \\
+    Both reverse & 01100110 & 0x66 \\
+    Spin CCW (left reverse, right forward) & 01100100 & 0x64 \\
+    Spin CW (left forward, right reverse) & 01100010 & 0x62 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The program does nothing until button A is pressed and released (Code~\ref{code:button}), which gives time to unplug the USB cable and set the robot down. Each wait is checked again after 20~ms so that switch bounce is not counted as a second press. The robot starts moving 500~ms after the button is released.
+
+\noindent\begin{minipage}{\linewidth}
+\begin{lstlisting}[caption={Waiting for a debounced press and release of button A (button.c).},label={code:button}]
+void button_a_wait(void)
+{
+    /* Wait for a press that stays pressed through the bounce time */
+    do {
+        while (!button_a_pressed())
+            ;                    /* loop indefinitely until pressed */
+        _delay_ms(20);           /* debounce                        */
+    } while (!button_a_pressed());
+
+    /* Wait for release, again debounced */
+    do {
+        while (button_a_pressed())
+            ;
+        _delay_ms(20);
+    } while (button_a_pressed());
+}
+\end{lstlisting}
+\end{minipage}
+
+\item \textbf{Full-speed tests.} For the full-speed tests, TCCR1A was cleared so that Timer1 does not drive PB5 and PB6, and the enable pins were set and cleared directly through PORTB. The function \texttt{motors\_set\_full()} takes a state (brake, forward, or reverse) for each motor. Each move ran for 1~s, followed by a brake and a 3~s pause. The program first ran each motor alone in each direction (left forward, left reverse, right forward, right reverse) and then both together (forward, reverse, spin CCW, spin CW). Every move went in the expected direction, so the direction pins did not need to be flipped from the default of PH low for forward. \fillin{confirm, and note anything unexpected}
+
+\item \textbf{Quarter-speed tests with PWM.} Timer1 was then set to Mode~1, 8-bit phase-correct PWM, with TOP = 0xFF (Code~\ref{code:pwm}). In non-inverting mode, TCCR1A = 0xA1: COM1A1 and COM1B1 connect OC1A (right motor) and OC1B (left motor) to the timer, and WGM10 selects Mode~1 together with WGM13:12 = 00 in TCCR1B. The low three bits of TCCR1B (CS12:10) select the prescaler and start the timer.
+
+\noindent\begin{minipage}{\linewidth}
+\begin{lstlisting}[caption={Switching to phase-correct PWM (motors.c).},gobble=4,label={code:pwm}]
+    TCCR1A = (1 << COM1A1) | (1 << COM1B1) | (1 << WGM10);
+    if (pwm_inverting)
+        TCCR1A |= (1 << COM1A0) | (1 << COM1B0);
+
+    /* TCCR1B: WGM13:12 = 00, CS12:10 = prescaler (starts the timer) */
+    TCCR1B = (uint8_t)prescale & 0x07;
+\end{lstlisting}
+\end{minipage}
+
+In phase-correct mode the counter counts up from 0 to TOP and back down, so one PWM period is $2 \cdot \text{TOP}$ timer clocks, and the PWM frequency is
+\begin{equation}
+  f_\text{PWM} = \frac{f_\text{clk}}{2 \cdot N \cdot \text{TOP}} = \frac{16~\text{MHz}}{2 \cdot N \cdot 255},
+  \label{eq:fpwm}
+\end{equation}
+where $N$ is the prescaler. With non-inverting output, the duty cycle is $\text{OCR1x}/255$, so quarter speed is $\text{OCR1x} = 64$ (25.1\%). The function \texttt{motors\_set\_speed()} takes a signed speed from $-255$ to $255$ for each motor: the sign sets the direction pin and the magnitude is written to OCR1A or OCR1B. Each quarter-speed move (forward, reverse, spin CCW, spin CW) ran for 2~s, followed by a brake and a 3~s pause.
+
+\item \textbf{OLED display.} The course-provided \texttt{font.c}, \texttt{OLED.c} and \texttt{OLED.h} were first tested with the program from the handout, built as its own project. Two corrections were needed. The handout calls \texttt{OLED\_Init()}, but the provided driver names the function \texttt{OLED\_init()}. With the string changed to \texttt{"ECE3218"}, the display showed only ECE321: the provided \texttt{OLED\_writeText()} always draws exactly 6 characters, so the seventh was cut off. It also never checks for the string's terminating \texttt{'\textbackslash 0'}, so a shorter string would show whatever bytes follow it in memory.
+
+\texttt{OLED\_writeText()} was modified to draw characters until the end of the string and then fill the rest of the line with spaces (Code~\ref{code:oled}). Text starts at column 16 and each character is 7 pixels wide (5 for the glyph and 2 for the gap), so 16 characters fit across the 128-pixel display. The blank fill also erases a longer previous message without clearing the whole display, which is slow because the driver bit-bangs every byte. After this change, ECE3218 displayed in full.
+
+\noindent\begin{minipage}{\linewidth}
+\begin{lstlisting}[caption={Modified character loop of OLED\_writeText() (OLED.c).},label={code:oled}]
+// Draw the string up to its '\0', then fill the rest of the row with
+// spaces so any leftovers from a longer previous message are erased.
+for (uint8_t i=0;i<OLED_TEXT_MAX;i++)
+{
+	char glyph=' ';
+	if (*text) glyph= *text++;
+\end{lstlisting}
+\end{minipage}
+
+In the motor program, the OLED shows the step currently running (for example ``L fwd'', ``1/4CCW'' or ``Brake''), which made it easy to match each motion of the robot to the code that caused it.
+
+\item \textbf{Prescaler experiment.} After the first quarter-speed run, the program shows ``A=next'' and waits for button A. Each press moves to the next prescaler (wrapping from 1024 back to 1), shows its value on the OLED (for example ``N=8''), and repeats the quarter-speed tests. Only the CS12:10 bits of TCCR1B are rewritten, so the rest of the PWM setup is unchanged. Table~\ref{tab:prescale} lists the PWM frequency from Equation~\ref{eq:fpwm} and the observed behavior for each prescaler.
+
+\begin{table}[H]
+  \centering
+  \caption{Quarter-speed behavior for each Timer1 prescaler.}
+  \label{tab:prescale}
+  \begin{tabular}{rcrr>{\raggedright\arraybackslash}p{6.3cm}}
+    \toprule
+    $N$ & CS12:10 & $f_\text{PWM}$ & Period & Observed behavior \\
+    \midrule
+    1    & 001 & 31.4~kHz & 31.9~$\mu$s & Quiet, no audible whine. Moved well. \\
+    8    & 010 & 3.92~kHz & 255~$\mu$s  & Smoothest motion, smoother than $N = 1$, but with a high-pitched whine that the other settings did not have. \\
+    64   & 011 & 490~Hz   & 2.04~ms     & \fillin{observations} \\
+    256  & 100 & 123~Hz   & 8.16~ms     & Somewhat rattly. \\
+    1024 & 101 & 30.6~Hz  & 32.6~ms     & Very rattly. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+\end{enumerate}
+
+\section{Discussion}
+\subsection{Unexpected Behaviors}
+% Anything the robot did that wasn't expected: drift / curving on "straight" moves,
+% one wheel faster than the other, spin not centered, etc.
+The main surprise was that $N = 8$ felt smoother than $N = 1$ at quarter speed, even though $N = 1$ was expected to be smoothest. This is explained in Section~\ref{sec:prescale}. The OLED truncating ECE3218 to ECE321 was also unexpected at first, until reading \texttt{OLED\_writeText()} showed that it always draws 6 characters. \fillin{any other unexpected behaviors from lab, e.g.\ drifting on straight moves}
+
+\subsection{Non-Inverting and Inverting PWM}
+In phase-correct mode, the compare output is updated each time TCNT1 passes OCR1x. In non-inverting mode (COM1x1:0 = 10), OC1x is cleared on a compare match while counting up and set on a match while counting down. The output is therefore high while $\text{TCNT1} < \text{OCR1x}$, and the duty cycle is $\text{OCR1x}/255$. In inverting mode (COM1x1:0 = 11), the actions are swapped: the output is high while $\text{TCNT1} > \text{OCR1x}$, and the duty cycle is $1 - \text{OCR1x}/255$.
+
+Since EN high drives the motor and EN low brakes it, the two modes map OCR values to speed in opposite directions. In non-inverting mode, OCR1x = 0 brakes, 64 is quarter speed, and 255 is full speed. In inverting mode, OCR1x = 255 brakes, 191 is quarter speed, and 0 is full speed. With the same OCR value of 64, inverting mode would run the motors at about three-quarter speed, and an OCR of 0, meant as a brake, would run them at full speed. For that reason, the program converts every duty cycle through one function that subtracts it from 255 in inverting mode, so the rest of the code works the same way in both modes.
+
+Once the OCR values are adjusted, the motor itself cannot tell the two modes apart: both produce a symmetric pulse at the same frequency and duty cycle. The only difference is where the pulse sits in the timer cycle, centered on BOTTOM in non-inverting mode and on TOP in inverting mode. Non-inverting mode is the more natural choice here because a larger OCR means a faster motor, and the reset value of 0 means stopped. \fillin{note what was seen if PWM\_INVERTING = 1 was tried on the robot}
+
+\subsection{Choosing the Prescaler}
+\label{sec:prescale}
+The behaviors in Table~\ref{tab:prescale} follow from how the PWM period compares to how fast the motor current can change, and from where the PWM frequency falls in the range of human hearing.
+
+At $N = 1$, the 31.4~kHz PWM frequency is above the roughly 20~kHz limit of human hearing, so it made no audible sound. The 31.9~$\mu$s period is also short compared to how fast the winding inductance lets the motor current change, so the current, and therefore the torque, stays nearly constant through each cycle.
+
+At $N = 8$, the 3.92~kHz PWM frequency falls in the 2--5~kHz range where the ear is most sensitive. The windings and the motor's body vibrate at the PWM frequency, so the motor acted like a small speaker and produced the whine. The motion felt smoother than at $N = 1$, most likely because of static friction. At $N = 1$, the current is almost constant at about a quarter of its full-speed value, which may be barely enough to keep the gearbox turning. At $N = 8$, the current ripples more during each cycle, and its peaks are well above the average. Those torque peaks help break static friction, so the motion is more consistent at low speed. This advantage should shrink at higher duty cycles, where the average torque is already well above friction.
+
+At $N = 256$ and $N = 1024$, the periods of 8.16~ms and 32.6~ms are long enough for the current to rise and fall a large amount within each cycle. The motor gets a torque pulse during each on-time and is braked during each off-time, which is the rattle that was heard and felt. At 30.6~Hz the robot is effectively kicked 30 times a second, so $N = 1024$ was the worst. \fillin{$N = 64$: expected a lower-pitched hum at 490~Hz; compare with what was observed}
+
+$N = 1$ was chosen as the best prescaler. It is the only setting that is both silent and free of torque ripple, and the whine at $N = 8$ is a real drawback for a robot that runs for long periods. The smoothness advantage of $N = 8$ comes from low duty cycles, where the torque is close to the friction limit, and should disappear at the higher speeds the robot uses most. Pololu's own motor library for the 3pi+ makes the same choice: it runs Timer1 with no prescaler and a TOP of 400, giving 20~kHz PWM, which is just above the range of hearing. \fillin{optional: distance traveled in the 2~s quarter-speed forward run at each $N$, to support the friction explanation}
+
+\section{Conclusion}
+% Two or three sentences.
+This lab controlled the 3pi+ robot's two motors through Port B, first as on/off outputs for full-speed tests and then with Timer1 phase-correct PWM on OC1A and OC1B for quarter-speed tests. The OLED driver was modified to display strings of up to 16 characters, and it showed each step of the test sequence. Of the five prescalers, $N = 1$ (31.4~kHz) was the best because it is silent and gives the steadiest motor current, while $N = 256$ and $N = 1024$ made the robot rattle and $N = 8$ produced an audible whine.
+
+\appendix
+\section{Full Code}
+\label{app:code}
+
+% Read straight from the Lab7 project so the listings always match the code.
+% \footnotesize so long comment lines fit.
+\lstinputlisting[basicstyle=\ttfamily\footnotesize,caption={Test sequence and prescaler experiment (main.c).},label={app:main}]{../../Lab7/main.c}
+
+\lstinputlisting[basicstyle=\ttfamily\footnotesize,caption={Motor driver interface (motors.h).},label={app:motorsh}]{../../Lab7/motors.h}
+
+\lstinputlisting[basicstyle=\ttfamily\footnotesize,caption={Motor driver: full-speed and PWM modes (motors.c).},label={app:motorsc}]{../../Lab7/motors.c}
+
+\lstinputlisting[basicstyle=\ttfamily\footnotesize,caption={Button A interface (button.h).},label={app:buttonh}]{../../Lab7/button.h}
+
+\lstinputlisting[basicstyle=\ttfamily\footnotesize,caption={Button A input with debouncing (button.c).},label={app:buttonc}]{../../Lab7/button.c}
+
+\lstinputlisting[basicstyle=\ttfamily\footnotesize,caption={Course-provided OLED driver header, with OLED\_TEXT\_MAX added (OLED.h).},label={app:oledh}]{../../Lab7/OLED.h}
+
+\lstinputlisting[basicstyle=\ttfamily\footnotesize,caption={Course-provided OLED driver, with OLED\_writeText() modified (OLED.c).},label={app:oledc}]{../../Lab7/OLED.c}
+
+\lstinputlisting[basicstyle=\ttfamily\footnotesize,caption={OLED test from the handout (oled\_test/main.c).},label={app:oledtest}]{../../Lab7/oled_test/main.c}
+
+\end{document}

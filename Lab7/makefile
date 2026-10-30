@@ -8,7 +8,7 @@
 # To force a specific port:  make program PORT=/dev/cu.usbmodem14101
 
 MCU     = atmega32u4
-F_CPU   = 16000000UL
+F_CPU   = 16000000L
 TARGET  = main
 
 SRC     = $(wildcard *.c)
