@@ -1,7 +1,3 @@
-; Lab 6, Program 1: rectangular wave on OC1A (PB1, Uno pin 9)
-; Calls SETWAVE once with a 440 Hz period and the duty cycle in DUTY,
-; then waits while the Timer1 compare ISR generates the wave.
-
 .cseg
 .org 0x0000
         jmp RESET           ; reset

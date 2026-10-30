@@ -1,7 +1,5 @@
 ; wave.inc: rectangular wave on OC1A (PB1) using Timer1 output compare A
-; Used by programs 1 and 2. The including program must put
-;     jmp TIM1_COMPA
-; at OC1Aaddr in its vector table.
+; must put `jmp TIM1_COMPA` at OC1Aaddr in its vector table.
 
 ; duty cycle codes for SETWAVE (r23)
 ; bits 1:0 = how far to shift pw right, bit 7 = invert the result

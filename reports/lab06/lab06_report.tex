@@ -2,6 +2,8 @@
 
 % ---------- Packages ----------
 \usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}            % Latin Modern: has bold typewriter for code keywords
 \usepackage{amsmath, amssymb}   % math
 \usepackage{graphicx}           % \includegraphics
 \usepackage{booktabs}           % nicer tables
@@ -10,6 +12,7 @@
 \usepackage{subcaption}         % side-by-side scope captures
 \usepackage{xcolor}
 \usepackage{listings}        % code blocks, pure TeX (no shell-escape)
+\usepackage{enumitem}           % (a)-(i) list labels
 \usepackage[hidelinks]{hyperref}
 
 % Draft marker: red text for anything still to be filled in from the lab notebook.
@@ -36,6 +39,7 @@
 }
 \lstdefinestyle{labcode}{
   basicstyle=\ttfamily\small,
+  columns=fullflexible, keepspaces=true,   % natural monospace spacing; alignment kept
   numbers=left, numberstyle=\tiny\color{gray!70}, numbersep=9pt,
   xleftmargin=2.2em, framexleftmargin=2.2em,   % background covers the number gutter
   breaklines=true, breakatwhitespace=true,
@@ -52,6 +56,9 @@
 \lstset{style=labcode}
 \renewcommand{\lstlistingname}{Code}   % caption says "Code 1" instead of "Listing 1"
 
+% Post-lab question in bold, with its answer starting on the next line, unindented.
+\newcommand{\question}[1]{\par\medskip\noindent\textbf{#1}\par\noindent\ignorespaces}
+
 % ---------- Report info (edit these) ----------
 \newcommand{\course}{ECE 3218L}
 \newcommand{\labtitle}{Lab 6: The Timer Unit}
@@ -65,60 +72,88 @@
 \date{}
 
 % One oscilloscope capture inside a two-column figure.
-\newcommand{\scope}[3]{%
-  \begin{subfigure}[t]{0.48\textwidth}
+% Optional first argument sets the width (default: two per row).
+\newcommand{\scope}[4][0.48\textwidth]{%
+  \begin{subfigure}[t]{#1}
     \centering
-    \includegraphics[width=\linewidth]{#1}
-    \caption{#2}
-    \label{#3}
+    \includegraphics[width=\linewidth]{#2}
+    \caption{#3}
+    \label{#4}
   \end{subfigure}}
 
 \begin{document}
 \maketitle
 
 \section{Overview}
-% Timer1: 16-bit counter, output compare (OC1A on PB1) and input capture (ICP1 on PB0).
-% What the three programs do: rectangular wave, a sequence of tones, half-frequency copy of an input.
+Timer1 is the ATmega328P's 16-bit timer. Its output compare unit can toggle a pin and request an interrupt when the counter TCNT1 matches OCR1A, and its input capture unit copies TCNT1 into ICR1 when an edge arrives on the ICP1 pin. In this lab, three programs were written using these features: a 440~Hz rectangular wave with a selectable duty cycle, a ten-note scale played on a piezo speaker, and a square wave at half the frequency of a function generator's signal.
 
 \section{Procedure}
-% Connections: OC1A (PB1, Uno pin 9) to the scope / piezo, ICP1 (PB0, Uno pin 8) from the
-% function generator, common ground. Generator checked for 0-5 V before connecting.
+\begin{itemize}
 
-% \begin{figure}[H]
-%   \centering
-%   \includegraphics[width=0.45\textwidth]{connections.png}
-%   \caption{Connections.}
-%   \label{fig:connections}
-% \end{figure}
+\item \textbf{Pre-lab Questions} The handout's questions were answered before writing Program 1:
+\begin{enumerate}[label=(\alph*)]
+  \item $f_{cc} = 16$~MHz.
+  \item 1, 8, 64, 256, or 1024, selected with CS12:10 in TCCR1B.
+  \item $f_{tc} = f_{cc} / sp$.
+  \item $pw = 1/f_w = 1/440~\text{Hz} = 2.273$~ms.
+  \item $\text{count} = f_{tc} \cdot pw$.
+  \item $\text{count} = f_{cc} \cdot pw / sp$.
+  \item Timer1 is 16 bits, so the max value is $2^{16} - 1 = 65535$.
+  \item With $sp = 1$, $\text{count} = 16~\text{MHz} / 440~\text{Hz} = 36364 < 65536$, so $sp = 1$.
+  \item $\text{count} = (16~\text{MHz}) \cdot (1/440~\text{Hz}) / 1 = 36363.6 \approx 36364$, which fits within our 16-bit register.
+\end{enumerate}
 
-\begin{enumerate}
-\item \textbf{Program 1: Rectangular wave.}
-% SETWAVE: inputs (pw, duty code, prescaler), high/low widths from right shifts,
-% 75% and 87.5% as the inverse of 25% and 12.5%, CTC + toggle OC1A, ISR swaps OCR1A.
-% Prescaler choice (pre-lab questions a-i): count = fcc * pw / sp, sp = 1, count = 36364.
+\item \textbf{Program 1} The subroutine SETWAVE takes the period $pw$ in clicks (r25:r24), a duty cycle code (r23), and a prescaler code (r22). The high width is $pw$ shifted right 3, 2, or 1 times for 12.5\%, 25\%, or 50\%, and the low width is $pw$ minus the high width. For 75\% and 87.5\%, bit 7 of the code swaps the two widths.
+
+Timer1 runs in CTC mode with OC1A set to toggle on each compare match. Each part lasts $\text{OCR1A} + 1$ clicks in CTC mode, so SETWAVE stores each width minus one.
+
+On each compare match, the hardware toggles OC1A and clears TCNT1, and the ISR loads OCR1A with the width of the part that just started: LOWCNT (width of low) if PB1 is now low and HIGHCNT (width of high) if it is high.
+
+\item \textbf{Program 2} The ten tone periods in Table~\ref{tab:tones} are copied from program memory into SRAM at startup. For each tone, the program calls SETWAVE at 50\% duty, waits 500~ms with waitnms from Lab~5, stops the timer by clearing TCCR1B, and waits another 500~ms.
+
+\item \textbf{Program 3} Timer1 runs freely in normal mode at clk/8, so each click is 0.5~$\mu$s. CTC mode cannot be used because input capture and output compare share TCNT1. On each rising edge, the capture ISR stores ICR1 minus the previous capture in PERIOD. On each compare match, OC1A toggles and the compare ISR adds PERIOD to OCR1A, so the output toggles once per input period and has half the input frequency.
+\end{itemize}
+
+\section{Results}
+\subsection{Program 1}
+Figure~\ref{fig:prog1_captures} shows the output at each duty cycle. The scope measured 438.6~Hz (2.280~ms) for all five. The time on ($t_{\text{on}}$) and time off ($t_{\text{off}}$) were measured from the traces, where one period spans 57 pixels at 1~ms/div, or 40~$\mu$s per pixel. The duty cycle is then
+\begin{equation}
+  D = \frac{t_{\text{on}}}{t_{\text{on}} + t_{\text{off}}}.
+  \label{eq:duty}
+\end{equation}
 
 \begin{table}[H]
   \centering
-  \caption{Program 1 at 440 Hz ($pw = 36364$ clicks, prescaler 1).}
+  \caption{Program 1 at 440 Hz ($pw = 36364$ clicks, prescaler 1). Measured times are read from the traces in Figure~\ref{fig:prog1_captures}, and measured voltages are the cursor readings.}
   \label{tab:duty}
-  \begin{tabular}{crrrr}
+  \begin{tabular}{crrrrcr}
     \toprule
-    & \multicolumn{2}{c}{Expected} & \multicolumn{2}{c}{Measured} \\
-    \cmidrule(lr){2-3} \cmidrule(l){4-5}
-    Duty cycle & High & Low & High & Low \\
+    & \multicolumn{2}{c}{Expected} & \multicolumn{3}{c}{Measured} & \\
+    \cmidrule(lr){2-3} \cmidrule(lr){4-6}
+    Duty cycle & $t_{\text{on}}$ & $t_{\text{off}}$ & $t_{\text{on}}$ & $t_{\text{off}}$ & Low / high (V) & $D$ from Eq.~\ref{eq:duty} \\
     \midrule
-    12.5\% & 284.1~$\mu$s & 1.989~ms & \fillin{} & \fillin{} \\
-    25\%   & 568.2~$\mu$s & 1.705~ms & \fillin{} & \fillin{} \\
-    50\%   & 1.136~ms     & 1.136~ms & \fillin{} & \fillin{} \\
-    75\%   & 1.705~ms     & 568.2~$\mu$s & \fillin{} & \fillin{} \\
-    87.5\% & 1.989~ms     & 284.1~$\mu$s & \fillin{} & \fillin{} \\
+    12.5\% & 284.1~$\mu$s & 1.989~ms     & 280~$\mu$s & 2.00~ms    & $-0.56$ / 4.40 & 12.3\% \\
+    25\%   & 568.2~$\mu$s & 1.705~ms     & 560~$\mu$s & 1.72~ms    & $-1.12$ / 3.76 & 24.6\% \\
+    50\%   & 1.136~ms     & 1.136~ms     & 1.14~ms    & 1.14~ms    & $-2.52$ / 2.52 & 50.0\% \\
+    75\%   & 1.705~ms     & 568.2~$\mu$s & 1.72~ms    & 560~$\mu$s & $-3.68$ / 1.28 & 75.4\% \\
+    87.5\% & 1.989~ms     & 284.1~$\mu$s & 2.00~ms    & 280~$\mu$s & $-4.32$ / 0.64 & 87.7\% \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\item \textbf{Program 2: Tones.}
-% Tone periods copied to SRAM, then for each: SETWAVE at 50%, wait 500 ms, stop the clock
-% (clear TCCR1B), wait 500 ms. What the scale sounded like.
+\begin{figure}[H]
+  \centering
+  \scope[0.29\textwidth]{125Duty.png}{12.5\% duty cycle}{fig:125}\hspace{0.03\textwidth}
+  \scope[0.29\textwidth]{25Duty.png}{25\% duty cycle}{fig:25}\hspace{0.03\textwidth}
+  \scope[0.29\textwidth]{50Duty.png}{50\% duty cycle}{fig:50}\\[0.5em]
+  \scope[0.29\textwidth]{75Duty.png}{75\% duty cycle}{fig:75}\hspace{0.03\textwidth}
+  \scope[0.29\textwidth]{875Duty.png}{87.5\% duty cycle}{fig:875}
+  \caption{Program 1 output on OC1A. The scope measured 438.6~Hz (2.280~ms) at every duty cycle.}
+  \label{fig:prog1_captures}
+\end{figure}
+
+\subsection{Program 2}
+The program played ten rising notes from C4 to E5, each lasting half a second with half a second of silence in between. The periods were stored in program memory then copied to SRAM based on Table~\ref{tab:tones}.
 
 \begin{table}[H]
   \centering
@@ -142,42 +177,56 @@
   \end{tabular}
 \end{table}
 
-\item \textbf{Program 3: Input capture.}
-% Timer1 free-running at clk/8 (0.5 us per click). Capture ISR: PERIOD = ICR1 - previous.
-% Compare ISR: OCR1A += PERIOD, toggles OC1A once per input period -> half the input frequency.
+\subsection{Program 3}
+The generator was set to 1.012~kHz (Figure~\ref{fig:funcgen}), and the output measured 504.6~Hz with a period of 1.982~ms (Figure~\ref{fig:capture}). The expected output is $1012 / 2 = 506.0$~Hz, with a period of 1.976~ms.
 
-\begin{table}[H]
+\begin{figure}[H]
   \centering
-  \caption{Program 3 input and output frequencies.}
-  \label{tab:capture}
-  \begin{tabular}{rrr}
-    \toprule
-    Input (Hz) & Expected output (Hz) & Measured output (Hz) \\
-    \midrule
-    1000 & 500 & \fillin{} \\
-    \fillin{} & \fillin{} & \fillin{} \\
-    \fillin{} & \fillin{} & \fillin{} \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-\end{enumerate}
+  \includegraphics[width=0.7\textwidth]{funcgen.jpg}
+  \caption{Function generator driving ICP1 at 1.012~kHz.}
+  \label{fig:funcgen}
+\end{figure}
 
-\section{Discussion}
-\subsection{Program 1: Accuracy and Limits}
-% Did the scope match Table 1? Any deviation, and why (or why not).
-% Limits of the program and of the high/low portions: 16-bit OCR1A, ISR must finish
-% before the next match (~40 cycles), pw >= 8 for 12.5%. Note on 90% vs 87.5%.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{program3_scope.jpg}
+  \caption{Program 3 output on OC1A. Frequency is 504.6~Hz (Meas~1, outlined in red), period is 1.982~ms (Meas~6), and amplitude is 4.967~V (Meas~3).}
+  \label{fig:capture}
+\end{figure}
 
-\subsection{Program 2: Frequency Range}
-% Smallest and largest frequency: 16 MHz / (sp * 65535) at the low end,
-% ISR time at the high end. Where each limit comes from.
+\section{Post-Lab}
+\question{Program 1: Are the results what you expected? Can you see any deviation from what you expected? Why (or why not)?}
+Yes. Each part of the wave is a whole number of timer clicks, and the hardware toggles OC1A at the compare match, so the ISR's response time does not affect the widths. The measured period of 2.280~ms is 0.32\% longer than the expected 2.273~ms. This most likely comes from the board's 16~MHz clock running slightly slow, since every width scales with it. The clock may be running slow because of temperature swings or the built-in tolerance. The measured duty cycles are within 0.4 percentage points of their targets.
 
-\subsection{Program 3: Measuring a Period}
-% Results explained to the TA. Rollover handling (16-bit subtraction).
-% Longest measurable period: 65535 * 0.5 us = 32.77 ms at clk/8.
+\question{What are the limits of your program? What are the limits of the high and low portions of your signal? Why?}
+\begin{itemize}
+\item \textbf{Longest period.} The period $pw$ is stored in a 16-bit register, so the largest value is 65535 clicks. At $sp = 1$, that is 4.1~ms, or 244.1~Hz. Because SETWAVE treats $pw$ as unsigned, this is double the 32767 limit in the handout.
+\item \textbf{Shortest high or low portion.} The ISR is the limit. After each toggle, the ISR has to load the next width into OCR1A before the timer counts past it, and it needs about 37 clock cycles to do that. If a portion is shorter than this, the timer passes the new value before it is loaded, misses the match, and keeps counting up to 65535 and around again, which adds a gap of up to 4.1~ms to the wave. At $sp = 1$, each portion should therefore be at least about 37 clicks (2.3~$\mu$s). For a 12.5\% wave, the short portion is $1/8$ of the period, so the period must be at least about $8 \times 37 \approx 300$ clicks, which limits the frequency to about 53~kHz.
+\item \textbf{Longest high or low portion.} The longest single portion is the long part of a 12.5\% or 87.5\% wave.
+\end{itemize}
 
-\section{Conclusion}
-% Two or three sentences.
+\question{Program 2: What is the smallest and largest signal frequency that you can generate? Where are the limitations coming from?}
+The smallest frequency is set by the 16-bit compare register. At $sp = 1$, it is $16~\text{MHz} / 65535 = 244.1$~Hz. A prescaler of 1024 would lower this to 0.238~Hz.
+
+The largest frequency is limited by the ISR. It runs twice per period, once for each toggle, and takes about 37 clock cycles each time. If each half of the wave is shorter than that (above about 216~kHz), the ISR runs nonstop and the main program never runs.
+
+\question{Program 3: Note the results and explain them.}
+The output was 504.6~Hz, 0.28\% below the expected 506.0~Hz. Unlike Program 1, this result does not depend on the board's clock, because the input is measured and the output is generated with the same timer: the output always lasts exactly two input periods in clicks. This error is minimal and can be attributed to frequency drift in the generator or other factors.
+
+\question{What is the longest period that you can measure with the last program?}
+The capture ISR finds the period with a 16-bit subtraction (sub, then sbc). If the timer rolls over once between edges, the subtraction borrows, but because the arithmetic is modulo $2^{16}$, the result is still the correct period. This works as long as the timer rolls over at most once per period, so the longest measurable period is
+\begin{equation}
+  T_{max} = 65535 \times 0.5~\mu\text{s} = 32.77~\text{ms},
+\end{equation}
+which corresponds to an input of 30.5~Hz. With a prescaler of 1024, each click lasts $1024 / 16~\text{MHz} = 64~\mu\text{s}$, so the longest measurable period would be
+\begin{equation}
+  T_{max} = 65535 \times 64~\mu\text{s} = 4.19~\text{s}.
+\end{equation}
+
+\section{Discussion/Conclusion}
+This lab used Timer1's output compare and input capture units to generate and measure waveforms in hardware. All three programs worked as designed. Program 1 produced all five duty cycles at 438.6~Hz, which is only 0.32\% below the target 440~Hz. Program 2 played the ten-note scale with the expected timing. Program 3 produced 504.6~Hz from a 1.012~kHz input and can measure periods of up to 32.77~ms.
+
+\pagebreak
 
 \appendix
 \section{Full Code}

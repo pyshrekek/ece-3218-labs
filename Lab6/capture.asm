@@ -1,9 +1,4 @@
-; Lab 6, Program 3: half-frequency copy of an input signal
-; Input capture on ICP1 (PB0, Uno pin 8) measures the input period.
-; Output compare toggles OC1A (PB1, Uno pin 9) once per input period,
-; so the output has twice the period (half the frequency) of the input.
-; Timer1 runs free (normal mode) at clk/8 = 2 MHz, 0.5 us per click,
-; so periods up to 65535 clicks = 32.77 ms (inputs above 30.5 Hz) work.
+; Program 3
 
 .dseg
 PREVCAP: .byte 2            ; ICR1 at the previous edge

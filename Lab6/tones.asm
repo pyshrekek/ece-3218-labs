@@ -1,6 +1,4 @@
-; Lab 6, Program 2: play a scale on a piezo speaker on OC1A (PB1, Uno pin 9)
-; Copies the tone periods into SRAM, then for each one: start a 50% duty
-; wave with SETWAVE, wait 500 ms, stop the timer, wait 500 ms.
+; Program 2
 
 .DEF ZERO=R0
 
