@@ -31,7 +31,7 @@ all: $(TARGET).hex
 	@$(SIZE) $(TARGET).elf
 
 $(TARGET).elf: $(OBJ)
-	$(CC) $(LDFLAGS) $^ -o $@
+	$(CC) $(LDFLAGS) $^ -o $@ -lm
 
 %.o: %.c $(HDR)
 	$(CC) $(CFLAGS) -c $< -o $@

@@ -129,6 +129,18 @@
     <Compile Include="sensors.h">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="button.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="button.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="line.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="line.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="OLED.c">
       <SubType>compile</SubType>
     </Compile>
