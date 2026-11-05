@@ -1,14 +1,8 @@
-/*
- * main.c - ECE 2218 Lab 7: Motor Control of the Pololu 3pi+ 32U4 using PWM
- *
- * Sequence (matches the "Before the Lab" steps):
- *   1. Setup: brake motors, wait for button A.
- *   2. Full-speed test, one motor at a time.
- *   3. Full-speed test, both motors together.
- *   4. Quarter-speed tests using Timer1 phase-correct PWM.
- * After that, each press of button A switches to the next Timer1
- * prescaler and repeats step 4, for the in-lab prescaler experiment.
- */
+//   1. Setup: brake motors, wait for button A.
+//   2. Full-speed test, one motor at a time.
+//   3. Full-speed test, both motors together.
+//   4. Quarter-speed tests using Timer1 phase-correct PWM.
+
 #ifndef F_CPU
 #define F_CPU 16000000UL
 #endif
@@ -19,32 +13,25 @@
 #include "motors.h"
 #include "button.h"
 
-/* ---- Settings ---------------------------------------------------------- */
-
-/* 1 = show each step on the OLED (needs font.c, OLED.c, OLED.h in this
- * folder). Set to 0 to build without them.                           */
+// 1 = show each step on the OLED (needs font.c, OLED.c, OLED.h in this
+// folder). Set to 0 to build without them.
 #define USE_OLED 1
 
-/* Prescaler for the first run of part 4 (see pwm_prescale_t in motors.h) */
+// Prescaler for the first run of part 4 (see pwm_prescale_t in motors.h)
 #define START_PRESCALE  PRESCALE_64
 
-/* 0 = non-inverting PWM, 1 = inverting PWM (for the post-lab question) */
+// 0 = non-inverting PWM, 1 = inverting PWM (for the post-lab question)
 #define PWM_INVERTING   0
 
-#define RUN_FULL_MS   1000   /* full-speed moves: 1 s                   */
-#define RUN_PWM_MS    2000   /* quarter-speed moves: 2 s                */
-#define PAUSE_MS      3000   /* "brake and wait a few seconds"          */
+#define RUN_FULL_MS   1000   // full-speed moves: 1 s
+#define RUN_PWM_MS    2000   // quarter-speed moves: 2 s
+#define PAUSE_MS      3000   // "brake and wait a few seconds"
 
-/* ---- OLED helper ------------------------------------------------------- */
 #if USE_OLED
 #include "OLED.h"
 
 static char text[50];
 
-/* Show one short message on the top line of the OLED.
- * OLED_writeText() draws up to OLED_TEXT_MAX (16) characters and blanks
- * the rest of the line, so leftovers from the previous message disappear
- * without clearing the whole screen. Longer messages are cut off.        */
 static void show(const char *msg)
 {
     snprintf(text, sizeof text, "%s", msg);
@@ -53,27 +40,25 @@ static void show(const char *msg)
 
 static void oled_setup(void)
 {
-    OLED_init();                /* note: lowercase i in the provided OLED.c */
+    OLED_init();             
     OLED_reset();
     OLED_clearDisplayRam();
     OLED_configureDefault();
     show("Lab 7");
 }
 #else
-static void show(const char *msg) { (void)msg; }   /* does nothing */
+static void show(const char *msg) { (void)msg; }   // does nothing
 static void oled_setup(void) { }
 #endif
 
-/* ---- Timing helpers ----------------------------------------------------- */
-
-/* _delay_ms() wants a constant, so loop 1 ms at a time */
+// _delay_ms() wants a constant, so loop 1 ms at a time
 static void delay_ms(uint16_t ms)
 {
     while (ms--)
         _delay_ms(1);
 }
 
-/* Brake both motors and wait */
+// Brake both motors and wait
 static void brake_and_wait(void)
 {
     motors_brake();
@@ -81,7 +66,7 @@ static void brake_and_wait(void)
     delay_ms(PAUSE_MS);
 }
 
-/* ---- Part 2: full speed, one motor at a time ---------------------------- */
+// ---- Part 2: full speed, one motor at a time ----------------------------
 static void part2_single_motors(void)
 {
     show("L fwd");
@@ -105,7 +90,7 @@ static void part2_single_motors(void)
     brake_and_wait();
 }
 
-/* ---- Part 3: full speed, both motors ------------------------------------ */
+// Part 3: full speed, both motors 
 static void part3_both_motors(void)
 {
     show("Fwd");
@@ -118,20 +103,20 @@ static void part3_both_motors(void)
     delay_ms(RUN_FULL_MS);
     brake_and_wait();
 
-    /* Spinning CCW (seen from above): left wheel back, right wheel forward */
+    // Spinning CCW (seen from above): left wheel back, right wheel forward
     show("CCW");
     motors_set_full(MOTOR_REVERSE, MOTOR_FORWARD);
     delay_ms(RUN_FULL_MS);
     brake_and_wait();
 
-    /* Spinning CW: left wheel forward, right wheel back */
+    // Spinning CW: left wheel forward, right wheel back
     show("CW");
     motors_set_full(MOTOR_FORWARD, MOTOR_REVERSE);
     delay_ms(RUN_FULL_MS);
     brake_and_wait();
 }
 
-/* ---- Part 4: quarter speed with PWM ------------------------------------- */
+// Part 4: quarter speed with PWM
 static void part4_quarter_speed(void)
 {
     const int16_t q = MOTOR_SPEED_QUARTER;
@@ -157,7 +142,7 @@ static void part4_quarter_speed(void)
     brake_and_wait();
 }
 
-/* Label for the OLED, e.g. "N=64" */
+// Label for the OLED, e.g. "N=64"
 static const char *prescale_label(pwm_prescale_t p)
 {
     switch (p) {
@@ -172,26 +157,26 @@ static const char *prescale_label(pwm_prescale_t p)
 
 int main(void)
 {
-    /* ---- Part 1: setup ---- */
-    motors_init();          /* motor pins as outputs, both braked */
-    button_a_init();        /* PB3 input with pull-up             */
+    // Part 1: setup
+    motors_init();          // motor pins as outputs, both braked
+    button_a_init();        // PB3 input with pull-up
     oled_setup();
 
     show("Push A");
-    button_a_wait();        /* don't move until button A is pressed */
-    delay_ms(500);          /* time to get your hand clear          */
+    button_a_wait();        // don't move until button A is pressed
+    delay_ms(500);          // time to get your hand clear
 
     part2_single_motors();
     part3_both_motors();
 
-    /* Switch from digital mode to Timer1 PWM */
+    // Switch from digital mode to Timer1 PWM
     pwm_prescale_t prescale = START_PRESCALE;
     motors_pwm_init(prescale, PWM_INVERTING);
     show(prescale_label(prescale));
     delay_ms(1000);
     part4_quarter_speed();
 
-    /* ---- Prescaler experiment: A = next prescaler, repeat part 4 ---- */
+    // Prescaler experiment: A = next prescaler, repeat part 4
     for (;;) {
         show("A=next");
         button_a_wait();
